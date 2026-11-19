@@ -60,6 +60,32 @@ bin/rails s
 開発ストアにアプリをインストールし、管理画面からアプリを開くとトップページが表示されます。
 トップページから Admin GraphQL API を実行でき、商品を作成/更新/削除すると `products/*` Webhook が届きます。
 
+## 鍵ペアの生成（client_assertion 用）
+
+client credentials grant で `client_assertion`（private_key_jwt）に使う鍵ペアを生成します。
+Shopify が受け付けるのは RS256（RSA 2048bit 以上）か ES256（EC P-256）のみです。
+
+```sh
+bin/rails shopify:keys:generate              # RS256 (RSA 2048bit)
+bin/rails shopify:keys:generate ALG=ES256    # ES256 (EC P-256)
+# その他: RSA_BITS=4096 / KEY_DIR=出力先 (既定 config/keys) / FORCE=1 で上書き
+```
+
+`config/keys/`（git 管理外）に以下が出力されます。
+
+- `shopify_private_key.pem`: 秘密鍵（パーミッション 600）
+- `shopify_public_key.pem`: 公開鍵（PEM）
+- `shopify_public_jwk.json`: 公開鍵（JWK）。Shopify に登録するのはこちら
+
+`kid` は公開鍵の JWK Thumbprint（RFC 7638）です。JWT を作るときは同じ `kid` を指定します。
+
+```ruby
+key = OpenSSL::PKey.read(File.read("config/keys/shopify_private_key.pem"))
+kid = JSON.parse(File.read("config/keys/shopify_public_jwk.json"))["kid"]
+assertion = ShopifyAPI::Auth::ClientAssertion.create(shop: "xxx.myshopify.com", kid:, private_key: key)
+ShopifyAPI::Auth::ClientCredentials.client_credentials(shop: "xxx.myshopify.com", client_assertion: assertion)
+```
+
 ## メモ
 
 - 生成された Webhook ジョブは古いシグネチャ (`handle(topic:, shop:, ...)`) だったため、shopify_api v16 の `handle(data:)` に合わせて修正済み。

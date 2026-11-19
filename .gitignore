@@ -38,3 +38,6 @@
 
 # bundle install --path vendor/bundle
 /vendor/bundle
+
+# bin/rails shopify:keys:generate で生成する鍵
+/config/keys/
