@@ -60,30 +60,76 @@ bin/rails s
 開発ストアにアプリをインストールし、管理画面からアプリを開くとトップページが表示されます。
 トップページから Admin GraphQL API を実行でき、商品を作成/更新/削除すると `products/*` Webhook が届きます。
 
-## 鍵ペアの生成（client_assertion 用）
+## アプリ専用トークンの発行（client_assertion）
 
-client credentials grant で `client_assertion`（private_key_jwt）に使う鍵ペアを生成します。
+秘密鍵で署名した JWT（`client_assertion` / private_key_jwt）を使い、client credentials grant でアプリ専用トークンを発行します。
+
+### 1. 鍵ペアを作る
+
 Shopify が受け付けるのは RS256（RSA 2048bit 以上）か ES256（EC P-256）のみです。
 
 ```sh
 bin/rails shopify:keys:generate              # RS256 (RSA 2048bit)
 bin/rails shopify:keys:generate ALG=ES256    # ES256 (EC P-256)
-# その他: RSA_BITS=4096 / KEY_DIR=出力先 (既定 config/keys) / FORCE=1 で上書き
 ```
+
+| オプション | 説明 |
+| --- | --- |
+| `ALG` | `RS256`（既定）/ `ES256` |
+| `RSA_BITS` | RSA の鍵長（既定 2048。2048 未満はエラー） |
+| `KEY_DIR` | 出力先（既定 `config/keys`） |
+| `FORCE=1` | 既存の鍵を上書きする（指定しないと既存の鍵がある場合は中止） |
 
 `config/keys/`（git 管理外）に以下が出力されます。
 
-- `shopify_private_key.pem`: 秘密鍵（パーミッション 600）
-- `shopify_public_key.pem`: 公開鍵（PEM）
-- `shopify_public_jwk.json`: 公開鍵（JWK）。Shopify に登録するのはこちら
+| ファイル | 内容 |
+| --- | --- |
+| `shopify_private_key.pem` | 秘密鍵（パーミッション 600）。JWT の署名に使う。共有しないこと |
+| `shopify_public_key.pem` | 公開鍵（PEM） |
+| `shopify_public_jwk.json` | 公開鍵（JWK）。**Shopify に登録するのはこちら** |
 
-`kid` は公開鍵の JWK Thumbprint（RFC 7638）です。JWT を作るときは同じ `kid` を指定します。
+`kid` は公開鍵の JWK Thumbprint（RFC 7638）で、鍵から一意に決まります（鍵を作り直すと変わる）。
+JWT ヘッダーの `kid` と登録した JWK の `kid` が一致している必要があります。
+
+### 2. 公開鍵（JWK）を Shopify に登録する
+
+Dev Dashboard のアプリ設定で、`config/keys/shopify_public_jwk.json` の中身を登録します。
+JWKS（鍵のセット）形式を求められた場合は `{"keys": [ ... ]}` で包んでください。
+
+鍵を作り直した場合は、新しい JWK を登録し直す必要があります。
+
+### 3. アプリをストアにインストールしておく
+
+アプリ専用トークンはインストール済みのストアに対してのみ発行されます。
+
+### 4. トークンを発行する
+
+```sh
+bin/rails shopify:token:issue SHOP=xxx.myshopify.com
+bin/rails shopify:token:issue SHOP=xxx.myshopify.com SHOW_TOKEN=1   # トークンを伏せずに表示
+```
+
+`SHOP` はストアの恒久ドメイン（`xxx.myshopify.com`）です。送信した JWT の header / payload と、発行されたトークン・スコープ・有効期限が表示されます。
+通信内容は `/logs` の `→ out auth POST .../admin/oauth/access_token` で確認でき、`client_assertion` の JWT もデコード表示されます。
+
+- トークンは `shpua_` で始まり、有効期限は 24 時間（リフレッシュトークンなし。期限が切れたら再発行する）
+- 付与されるスコープはアプリ設定の `SCOPES` より広い（読み取り系がほぼすべて付いた）ので取り扱いに注意
+
+### うまくいかないとき
+
+| レスポンス | 原因 |
+| --- | --- |
+| 401 `invalid_client` / `Invalid client assertion` | JWK が未登録、または登録した鍵・`kid` が手元の鍵と一致していない |
+| 400 `app_not_installed` | アプリがそのストアにインストールされていない |
+
+### コードから使う場合
 
 ```ruby
 key = OpenSSL::PKey.read(File.read("config/keys/shopify_private_key.pem"))
 kid = JSON.parse(File.read("config/keys/shopify_public_jwk.json"))["kid"]
 assertion = ShopifyAPI::Auth::ClientAssertion.create(shop: "xxx.myshopify.com", kid:, private_key: key)
-ShopifyAPI::Auth::ClientCredentials.client_credentials(shop: "xxx.myshopify.com", client_assertion: assertion)
+session = ShopifyAPI::Auth::ClientCredentials.client_credentials(shop: "xxx.myshopify.com", client_assertion: assertion)
+session.access_token
 ```
 
 ## メモ
