@@ -1,0 +1,29 @@
+<h1>通信ログ</h1>
+
+<p class="notice"><%= notice %></p>
+
+<form class="filters" method="get">
+  <%= select_tag :direction, options_for_select([["方向: すべて", ""], ["← inbound (Shopify → アプリ)", "inbound"], ["→ outbound (アプリ → Shopify)", "outbound"]], params[:direction]) %>
+  <%= select_tag :category, options_for_select([["種別: すべて", ""]] + %w[page webhook api auth admin_api].map { [_1, _1] }, params[:category]) %>
+  <button type="submit">絞り込み</button>
+  <%= link_to "更新", request.fullpath %>
+</form>
+<%= button_to "すべて削除", destroy_all_logs_path, method: :delete, form: { data: { turbo_confirm: "削除しますか？" } }, class: "danger" %>
+
+<table class="logs">
+  <thead><tr><th>#</th><th>時刻</th><th>方向</th><th>種別</th><th>メソッド</th><th>URL</th><th>status</th><th>ms</th></tr></thead>
+  <tbody>
+    <% @logs.each do |log| %>
+      <tr>
+        <td><%= link_to log.id, log_path(log) %></td>
+        <td><%= log.created_at.strftime("%m/%d %H:%M:%S") %></td>
+        <td><%= log.inbound? ? "← in" : "→ out" %></td>
+        <td><%= log.category %></td>
+        <td><%= log.http_method %></td>
+        <td class="url"><%= link_to log.url.truncate(120), log_path(log) %></td>
+        <td><%= log.status %><%= " #{log.error}" if log.error %></td>
+        <td><%= log.duration_ms %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>

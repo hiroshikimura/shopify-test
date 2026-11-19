@@ -1,0 +1,31 @@
+<p><%= link_to "← 一覧へ", logs_path %></p>
+
+<h1>#<%= @log.id %> <%= @log.inbound? ? "← inbound" : "→ outbound" %> / <%= @log.category %></h1>
+
+<table class="meta">
+  <tr><th>時刻</th><td><%= @log.created_at.strftime("%Y-%m-%d %H:%M:%S.%L") %></td></tr>
+  <tr><th>リクエスト</th><td><code><%= @log.http_method %> <%= @log.url %></code></td></tr>
+  <tr><th>ショップ</th><td><%= @log.shop_domain %></td></tr>
+  <tr><th>ステータス</th><td><%= @log.status %></td></tr>
+  <tr><th>所要時間</th><td><%= @log.duration_ms %> ms</td></tr>
+  <% if @log.error %>
+    <tr><th>エラー</th><td class="error"><%= @log.error %></td></tr>
+  <% end %>
+</table>
+
+<% @log.decoded_jwts.each do |label, payload| %>
+  <h2>JWT ペイロード（<%= label %>、署名未検証でデコード）</h2>
+  <pre class="code"><%= payload %></pre>
+<% end %>
+
+<h2>リクエストヘッダー</h2>
+<pre class="code"><%= JSON.pretty_generate(@log.request_headers || {}) %></pre>
+
+<h2>リクエストボディ</h2>
+<pre class="code"><%= @log.request_body.presence || "(なし)" %></pre>
+
+<h2>レスポンスヘッダー</h2>
+<pre class="code"><%= JSON.pretty_generate(@log.response_headers || {}) %></pre>
+
+<h2>レスポンスボディ</h2>
+<pre class="code"><%= @log.response_body.presence || "(記録なし)" %></pre>

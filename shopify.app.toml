@@ -1,0 +1,21 @@
+# Shopify CLI (`shopify app config link` / `shopify app deploy`) 用のアプリ設定。
+# Dev Dashboard で手動設定する場合も、ここと同じ値を入力すればOK。
+client_id = "ここに SHOPIFY_API_KEY を入れる"
+name = "shopify-test"
+application_url = "https://xxxx.trycloudflare.com"
+embedded = true
+
+[build]
+automatically_update_urls_on_dev = false
+
+[access_scopes]
+# config/initializers/shopify_app.rb の config.scope (SCOPES) と揃える
+scopes = "read_products"
+# Shopify 管理のインストール (トークン交換方式) を使う
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [ "https://xxxx.trycloudflare.com/auth/shopify/callback" ]
+
+[webhooks]
+api_version = "2025-10"

@@ -1,0 +1,119 @@
+<h1>Shopify Test</h1>
+<p class="muted">
+  ショップ: <strong><%= @shop_origin %></strong> /
+  API version: <%= ShopifyApp.configuration.api_version %> /
+  scopes: <%= ShopifyApp.configuration.scope %>
+</p>
+
+<section class="card">
+  <h2>Admin GraphQL API を叩く</h2>
+  <div class="buttons">
+    <button type="button" data-sample="shop">shop</button>
+    <button type="button" data-sample="products">products</button>
+    <button type="button" data-sample="scopes">付与済みスコープ</button>
+    <button type="button" data-sample="webhooks">Webhook 登録状況</button>
+  </div>
+  <textarea id="query" rows="8" spellcheck="false"></textarea>
+  <button type="button" id="run" class="primary">実行</button>
+  <pre id="result" class="code">（結果がここに表示されます）</pre>
+</section>
+
+<section class="card">
+  <h2>
+    最近の通信
+    <button type="button" id="reload-logs">更新</button>
+  </h2>
+  <p class="muted">
+    詳細（ヘッダー・ボディ・JWTの中身）は
+    <a href="http://localhost:<%= ENV.fetch("PORT", 3000) %>/logs" target="_blank" rel="noopener">http://localhost:<%= ENV.fetch("PORT", 3000) %>/logs</a>
+    で確認できます（ローカルからのみアクセス可）。
+  </p>
+  <table class="logs">
+    <thead><tr><th>#</th><th>時刻</th><th>方向</th><th>種別</th><th>メソッド</th><th>URL</th><th>status</th><th>ms</th></tr></thead>
+    <tbody id="logs">
+      <% @logs.each do |log| %>
+        <tr>
+          <td><%= log.id %></td>
+          <td><%= log.created_at.strftime("%H:%M:%S") %></td>
+          <td><%= log.inbound? ? "← in" : "→ out" %></td>
+          <td><%= log.category %></td>
+          <td><%= log.http_method %></td>
+          <td class="url"><%= log.url.truncate(100) %></td>
+          <td><%= log.status || log.error %></td>
+          <td><%= log.duration_ms %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</section>
+
+<script>
+  const samples = {
+    shop: `{
+  shop {
+    name
+    email
+    myshopifyDomain
+    currencyCode
+    plan { displayName }
+  }
+}`,
+    products: `{
+  products(first: 5, sortKey: UPDATED_AT, reverse: true) {
+    nodes { id title status updatedAt }
+  }
+}`,
+    scopes: `{
+  currentAppInstallation {
+    accessScopes { handle }
+  }
+}`,
+    webhooks: `{
+  webhookSubscriptions(first: 20) {
+    nodes {
+      id
+      topic
+      endpoint { ... on WebhookHttpEndpoint { callbackUrl } }
+    }
+  }
+}`,
+  };
+
+  const queryEl = document.getElementById("query");
+  const resultEl = document.getElementById("result");
+  queryEl.value = samples.shop;
+
+  document.querySelectorAll("[data-sample]").forEach((button) => {
+    button.addEventListener("click", () => { queryEl.value = samples[button.dataset.sample]; });
+  });
+
+  // App Bridge が Authorization: Bearer <セッショントークン> を自動で付けてくれる
+  document.getElementById("run").addEventListener("click", async () => {
+    resultEl.textContent = "実行中...";
+    const response = await fetch("/api/graphql", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: queryEl.value }),
+    });
+    resultEl.textContent = JSON.stringify(await response.json(), null, 2);
+    reloadLogs();
+  });
+
+  const escape = (value) => String(value ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  async function reloadLogs() {
+    const logs = await (await fetch("/api/logs")).json();
+    document.getElementById("logs").innerHTML = logs.map((log) => `
+      <tr>
+        <td>${log.id}</td>
+        <td>${new Date(log.created_at).toLocaleTimeString()}</td>
+        <td>${log.direction === "inbound" ? "← in" : "→ out"}</td>
+        <td>${escape(log.category)}</td>
+        <td>${escape(log.http_method)}</td>
+        <td class="url">${escape(log.url.slice(0, 100))}</td>
+        <td>${escape(log.status ?? log.error)}</td>
+        <td>${escape(log.duration_ms)}</td>
+      </tr>`).join("");
+  }
+  document.getElementById("reload-logs").addEventListener("click", reloadLogs);
+</script>
