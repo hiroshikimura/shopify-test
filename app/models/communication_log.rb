@@ -72,8 +72,10 @@ class CommunicationLog < ApplicationRecord
     tokens["query: id_token"] = query["id_token"] if query["id_token"].present?
     auth = request_headers&.dig("Authorization").to_s
     tokens["header: Authorization"] = auth.delete_prefix("Bearer ") if auth.start_with?("Bearer ")
-    body_token = JSON.parse(request_body.to_s)["subject_token"] rescue nil
-    tokens["body: subject_token"] = body_token if body_token.present?
+    body = JSON.parse(request_body.to_s) rescue {}
+    %w[subject_token client_assertion].each do |key|
+      tokens["body: #{key}"] = body[key] if body.is_a?(Hash) && body[key].present?
+    end
 
     tokens.filter_map do |label, token|
       _header, payload, = token.split(".")

@@ -57,3 +57,36 @@ namespace :shopify do
     end
   end
 end
+
+namespace :shopify do
+  namespace :token do
+    # 事前に shopify:keys:generate で鍵を作り、公開鍵 (JWK) を Shopify に登録しておくこと
+    #
+    #   bin/rails shopify:token:issue SHOP=xxx.myshopify.com
+    #   bin/rails shopify:token:issue SHOP=xxx.myshopify.com SHOW_TOKEN=1   # トークンを伏せずに表示
+    desc "client_assertion (秘密鍵で署名した JWT) を使ってアプリ専用トークンを発行する"
+    task issue: :environment do
+      shop = ENV["SHOP"].presence || abort("SHOP=xxx.myshopify.com を指定してください")
+      key_dir = Rails.root.join(ENV.fetch("KEY_DIR", "config/keys"))
+      private_key = OpenSSL::PKey.read(File.read(key_dir.join("shopify_private_key.pem")))
+      kid = JSON.parse(File.read(key_dir.join("shopify_public_jwk.json"))).fetch("kid")
+
+      assertion = ShopifyAPI::Auth::ClientAssertion.create(shop:, kid:, private_key:)
+      header, payload = assertion.split(".").first(2).map { JSON.parse(Base64.urlsafe_decode64(_1 + "=" * (-_1.length % 4))) }
+      puts "client_assertion"
+      puts "  header:  #{header.to_json}"
+      puts "  payload: #{payload.to_json}"
+
+      session = ShopifyAPI::Auth::ClientCredentials.client_credentials(shop:, client_assertion: assertion)
+      token = ENV["SHOW_TOKEN"].present? ? session.access_token : CommunicationLog.mask(session.access_token)
+      puts
+      puts "アプリ専用トークンを発行しました"
+      puts "  shop:         #{session.shop}"
+      puts "  access_token: #{token}"
+      puts "  scope:        #{session.scope}"
+      puts "  expires:      #{session.expires || '(なし)'}"
+    rescue ShopifyAPI::Errors::HttpResponseError => e
+      abort "発行に失敗しました (HTTP #{e.code}): #{e.message}"
+    end
+  end
+end
