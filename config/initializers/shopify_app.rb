@@ -1,7 +1,7 @@
 ShopifyApp.configure do |config|
   config.application_name = "Shopify Test"
   config.old_secret = ""
-  # shopify.app.toml の [access_scopes] と揃えること
+  # shopify.app.<名前>.toml の [access_scopes] と揃えること
   config.scope = ENV.fetch("SCOPES", "read_products") # Consult this page for more scope options: https://shopify.dev/docs/api/usage/access-scopes
   config.embedded_app = true
   config.new_embedded_auth_strategy = true

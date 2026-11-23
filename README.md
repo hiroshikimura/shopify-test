@@ -16,38 +16,83 @@ Shopify アプリの通信内容を確認するための、開発参考用 Rails
 - 受信: `lib/shopify_traffic/inbound_logger.rb`（Rack ミドルウェア）
 - 送信: `lib/shopify_traffic/outbound_logger.rb`（`ShopifyAPI::Clients::HttpClient#request` に prepend）
 - アクセストークン・`client_secret` はマスクして保存します。JWT（`id_token` / セッショントークン）は詳細画面でペイロードをデコード表示します。
-- ログビューア: http://localhost:3000/logs （トンネル経由では 403。ローカルからのみ）
+- ログビューア: http://localhost:3000/logs （公開 URL 経由では 403。ローカルからのみ）
 
 ## セットアップ
 
-### 1. トンネルを用意する
+### 1. 公開 URL を用意する
 
-Shopify から到達できる HTTPS の URL が必要です。例（Cloudflare Tunnel）:
+Shopify から到達できる HTTPS の URL が必要です。
+
+**A. 固定ドメイン + `ssh -R`（おすすめ）**
+
+自分で管理するドメインとサーバーがある場合、サーバーのリバースプロキシで TLS を終端し、`ssh -R` で手元の Rails まで転送します。URL が変わらないので、Shopify 側の設定は一度で済みます。
+
+```
+Shopify -> https://dev.example.com (リバースプロキシ: TLS 終端)
+        -> 中継サーバーの 127.0.0.1:<PORT> (ssh -R)
+        -> 手元 PC の 127.0.0.1:3000 (Rails)
+```
+
+```sh
+ssh -N -R <PORT>:127.0.0.1:3000 \
+    -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 relay-host
+```
+
+`~/.ssh/config` に書く場合（通常のログイン用とは別の Host にしておくと、ログインのたびにポートを取りに行かずに済みます）:
+
+```sshconfig
+Host relay-fwd
+  HostName relay-host
+  RemoteForward <PORT> 127.0.0.1:3000
+  ExitOnForwardFailure yes
+  ServerAliveInterval 30
+  ServerAliveCountMax 3
+  SessionType none
+```
+
+`ssh relay-fwd`（自動で再接続したい場合は `autossh -M 0 relay-fwd`）で接続します。
+
+- 中継サーバー側では転送ポートを `127.0.0.1` だけで待ち受け（`GatewayPorts no`）、外からはリバースプロキシ経由でしか届かないようにする
+- リバースプロキシは必ず `X-Forwarded-For` を付ける。付けないと Rails からはすべて `127.0.0.1` からのアクセスに見え、`/logs` がインターネットに公開されてしまう
+- 外部ネットワークから `https://dev.example.com/logs` を開いて 403 になることを確認する
+- development モードの Rails がそのまま公開されるので、使わないときは接続を切っておく
+
+**B. Cloudflare Quick Tunnel（手軽だが URL が変わる）**
 
 ```sh
 cloudflared tunnel --url http://localhost:3000
 # => https://xxxx.trycloudflare.com
 ```
 
-ngrok でも可（`ngrok http 3000`）。URL が変わったら下記の設定もすべて更新してください。
+アカウント不要ですぐ使えますが、起動するたびに URL が変わります。長時間の中断（PC のスリープなど）でトンネルが消えることもあります（`Tunnel not found`）。
 
 ### 2. Shopify 側でアプリを作る
 
-[Dev Dashboard](https://dev.shopify.com/) でアプリを作成し、バージョンに以下を設定してリリースします（`shopify.app.toml` と同じ内容）。
+[Dev Dashboard](https://dev.shopify.com/) でアプリを作成し、Shopify CLI（要 Node.js）で設定を管理します。
 
-- App URL: `https://xxxx.trycloudflare.com`
-- 埋め込み: 有効
-- スコープ: `read_products`
-- リダイレクト URL: `https://xxxx.trycloudflare.com/auth/shopify/callback`
-- 「レガシーインストールフローを使用」: 無効（Shopify 管理のインストール + トークン交換）
+```sh
+npm install -g @shopify/cli@latest
+shopify app config link     # shopify.app.<名前>.toml が作られる
+# toml の application_url / redirect_urls / scopes を編集して
+shopify app deploy
+```
 
-Shopify CLI（要 Node.js）を使う場合は `shopify.app.toml` を編集して `shopify app deploy` でも同じことができます。
+| 項目 | 値 |
+| --- | --- |
+| `application_url` | `https://<公開URL>`（パスなし） |
+| `embedded` | `true` |
+| `[access_scopes] scopes` | 必要なスコープ（`.env` の `SCOPES` と揃える） |
+| `use_legacy_install_flow` | `false`（Shopify 管理のインストール + トークン交換） |
+| `[auth] redirect_urls` | `https://<公開URL>/auth/shopify/callback` |
+
+Dev Dashboard の画面で同じ値を入力してバージョンをリリースしても構いませんが、必須（コンプライアンス）Webhook は toml + CLI でしか設定できません。
 
 ### 3. 環境変数
 
 ```sh
 cp .env.example .env
-# SHOPIFY_API_KEY (Client ID), SHOPIFY_API_SECRET (Client secret), HOST (トンネルURL) を設定
+# SHOPIFY_API_KEY (Client ID), SHOPIFY_API_SECRET (Client secret), HOST (公開URL) を設定
 ```
 
 ### 4. 起動
@@ -59,6 +104,21 @@ bin/rails s
 
 開発ストアにアプリをインストールし、管理画面からアプリを開くとトップページが表示されます。
 トップページから Admin GraphQL API を実行でき、商品を作成/更新/削除すると `products/*` Webhook が届きます。
+
+### 公開 URL を変えたとき
+
+Webhook の購読は 2 系統あり、更新方法が違います。
+
+| 系統 | 登録元 | URL 変更時 |
+| --- | --- | --- |
+| アプリ全体 | toml の `[[webhooks.subscriptions]]` | toml を直して `shopify app deploy`（相対パスの `uri` は `application_url` に追従） |
+| ストアごと | `config.webhooks` を gem がトークン交換時に Admin API で登録 | 自動では変わらない。トークン交換をやり直させる（`Shop` を削除してアプリを開き直す） |
+
+1. `.env` の `HOST` を変えて **Rails を再起動**（`HOST` は起動時に読まれる。古いままだと古い URL で Webhook が登録される）
+2. toml の `application_url` / `redirect_urls` を変えて `shopify app deploy`
+3. ストアごとの Webhook を登録し直す: `bin/rails runner 'Shop.delete_all'` → 管理画面からアプリを開く
+
+`/logs` の `webhookSubscriptionCreate` / `Update` の `callbackUrl` で、登録された URL を確認できます。
 
 ## アプリ専用トークンの発行（client_assertion）
 
@@ -113,7 +173,7 @@ bin/rails shopify:token:issue SHOP=xxx.myshopify.com SHOW_TOKEN=1   # トーク�
 通信内容は `/logs` の `→ out auth POST .../admin/oauth/access_token` で確認でき、`client_assertion` の JWT もデコード表示されます。
 
 - トークンは `shpua_` で始まり、有効期限は 24 時間（リフレッシュトークンなし。期限が切れたら再発行する）
-- 付与されるスコープはアプリ設定の `SCOPES` より広い（読み取り系がほぼすべて付いた）ので取り扱いに注意
+- 付与されるスコープはアプリ（Dev Dashboard / toml）に設定したスコープ。Rails 側の `SCOPES` ではない
 
 ### うまくいかないとき
 
