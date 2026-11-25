@@ -15,6 +15,7 @@ class HomeController < ApplicationController
       @shop_origin = current_shopify_domain
       @host = params[:host]
       @logs = CommunicationLog.recent.limit(20)
+      @shop = Shop.find_by(shopify_domain: @shop_origin)
     end
   end
 end

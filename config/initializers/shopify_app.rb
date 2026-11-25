@@ -11,6 +11,8 @@ ShopifyApp.configure do |config|
   config.shop_session_repository = "Shop"
   config.log_level = :debug
   config.reauth_on_access_scope_changes = true
+  # 有期限トークン（画面から移行した場合など）が期限切れなら、トークン交換し直す。無期限トークンには影響しない
+  config.check_session_expiry_date = true
   config.webhooks = [
     { topic: "app/uninstalled", address: "webhooks/app_uninstalled" },
     { topic: "customers/data_request", address: "webhooks/customers_data_request" },
@@ -59,6 +61,8 @@ Rails.application.config.after_initialize do
       log_level: :debug,
       logger: Rails.logger,
       private_shop: ENV.fetch("SHOPIFY_APP_PRIVATE_SHOP", nil),
+      # インストール時などのトークン交換で要求するオフライントークンの種類。未設定なら無期限 (expiring: 0)
+      expiring_offline_access_tokens: ENV["SHOPIFY_EXPIRING_OFFLINE_TOKENS"].present?,
       user_agent_prefix: "ShopifyApp/#{ShopifyApp::VERSION}"
     )
 

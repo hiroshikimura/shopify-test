@@ -16,7 +16,7 @@ Shopify アプリの通信内容を確認するための、開発参考用 Rails
 - 受信: `lib/shopify_traffic/inbound_logger.rb`（Rack ミドルウェア）
 - 送信: `lib/shopify_traffic/outbound_logger.rb`（`ShopifyAPI::Clients::HttpClient#request` に prepend）
 - アクセストークン・`client_secret` はマスクして保存します。JWT（`id_token` / セッショントークン）は詳細画面でペイロードをデコード表示します。
-- ログビューア: http://localhost:3000/logs （公開 URL 経由では 403。ローカルからのみ）
+- ログビューア: http://localhost:3000/logs （ローカルからのみ。さらに Basic 認証: ユーザー名は任意、パスワードは `.env` の `LOGS_TOKEN`）
 
 ## セットアップ
 
@@ -56,6 +56,7 @@ Host relay-fwd
 - 中継サーバー側では転送ポートを `127.0.0.1` だけで待ち受け（`GatewayPorts no`）、外からはリバースプロキシ経由でしか届かないようにする
 - リバースプロキシは必ず `X-Forwarded-For` を付ける。付けないと Rails からはすべて `127.0.0.1` からのアクセスに見え、`/logs` がインターネットに公開されてしまう
 - 外部ネットワークから `https://dev.example.com/logs` を開いて 403 になることを確認する
+- 中継サーバー上から `127.0.0.1:<PORT>` に直接送られたリクエストは Rails からローカルと区別できない。そのため `/logs` には `LOGS_TOKEN` の Basic 認証を掛け、web-console（エラー画面の Ruby コンソール）は入れていない
 - development モードの Rails がそのまま公開されるので、使わないときは接続を切っておく
 
 **B. Cloudflare Quick Tunnel（手軽だが URL が変わる）**
@@ -191,6 +192,17 @@ assertion = ShopifyAPI::Auth::ClientAssertion.create(shop: "xxx.myshopify.com", 
 session = ShopifyAPI::Auth::ClientCredentials.client_credentials(shop: "xxx.myshopify.com", client_assertion: assertion)
 session.access_token
 ```
+
+## オフライントークンを有期限にする
+
+インストール時のトークン交換で得るオフライントークンは、既定では無期限です（`expiring: 0` を要求）。
+`.env` に `SHOPIFY_EXPIRING_OFFLINE_TOKENS=1` を設定すると、トークン交換で有期限トークン + リフレッシュトークンを要求します。
+期限切れのセッションは、設定に関係なくトークン交換し直します（そのときは上記の設定に従った種類のトークンになる）。
+
+保存済みの無期限トークンは、アプリのトップページの「オフライントークン」欄にある **有期限トークンに移行** ボタンで移行できます（`POST /api/token/migrate_to_expiring`）。**元に戻す API は無い**ので、確認のチェックを入れたときだけボタンが押せるようにしています。移行ボタンはインストール時の要求の設定とは独立して使えます。
+
+移行の通信は `/logs` の `→ out auth POST .../admin/oauth/access_token` で確認できます（`refresh_token` はマスクして保存）。
+`Shop#with_shopify_session` を通して API を呼ぶと、期限切れのアクセストークンはリフレッシュトークンで自動更新されます。
 
 ## メモ
 

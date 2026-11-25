@@ -1,0 +1,11 @@
+# 商品詳細ページの「その他の操作」に、このアプリへのリンクを追加する
+[[extensions]]
+type = "admin_link"
+name = "Shopify Test で開く"
+handle = "product-admin-link"
+uid = "f83cacba-c8bd-a9e8-dbac-b73e6adfdb1055984fc0"
+
+[[extensions.targeting]]
+target = "admin.product-details.action.link"
+# application_url からの相対パス。Shopify が id（商品ID）や shop, host などを付けて開く
+url = "/admin_links/product"

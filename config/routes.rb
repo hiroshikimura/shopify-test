@@ -4,7 +4,11 @@ Rails.application.routes.draw do
   namespace :api do
     post "graphql", to: "graphql#create"
     get "logs", to: "logs#index"
+    post "token/migrate_to_expiring", to: "tokens#migrate_to_expiring"
   end
+
+  # Admin link（extensions/product-admin-link）のリンク先
+  get "admin_links/product", to: "admin_links#product"
 
   resources :logs, only: %i[index show] do
     delete :destroy_all, on: :collection

@@ -1,0 +1,34 @@
+<h1>商品詳細ページからの Admin link</h1>
+<p class="muted">ショップ: <strong><%= @shop_origin %></strong></p>
+
+<section class="card">
+  <h2>受け取ったクエリパラメータ</h2>
+  <table class="meta">
+    <% @received_params.each do |key, value| %>
+      <tr><th><%= key %></th><td class="url"><%= value.to_s.truncate(120) %></td></tr>
+    <% end %>
+  </table>
+</section>
+
+<section class="card">
+  <h2>商品（Admin GraphQL API）</h2>
+  <% if @error %>
+    <p class="error"><%= @error %></p>
+  <% elsif @product_gid.nil? %>
+    <p class="error">商品 ID（id パラメータ）が渡されていません。</p>
+  <% else %>
+    <p class="muted">query product(id: "<%= @product_gid %>")</p>
+    <% if @product %>
+      <table class="meta">
+        <% @product.each do |key, value| %>
+          <tr><th><%= key %></th><td><%= value %></td></tr>
+        <% end %>
+      </table>
+    <% end %>
+    <% if @errors.present? %>
+      <pre class="code"><%= JSON.pretty_generate(@errors) %></pre>
+    <% end %>
+  <% end %>
+</section>
+
+<p><%= link_to "トップページへ", root_path(request.query_parameters.except("id")) %></p>

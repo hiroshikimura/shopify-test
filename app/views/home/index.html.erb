@@ -6,6 +6,24 @@
 </p>
 
 <section class="card">
+  <h2>オフライントークン</h2>
+  <table class="meta">
+    <tr><th>種類</th><td id="token-kind"><%= @shop&.expires_at ? "有期限" : "無期限" %></td></tr>
+    <tr><th>有効期限</th><td id="token-expires"><%= @shop&.expires_at&.strftime("%Y-%m-%d %H:%M:%S") || "-" %></td></tr>
+    <tr><th>リフレッシュトークン期限</th><td id="token-refresh-expires"><%= @shop&.refresh_token_expires_at&.strftime("%Y-%m-%d %H:%M:%S") || "-" %></td></tr>
+    <tr><th>インストール時の要求</th><td><%= ShopifyAPI::Context.expiring_offline_access_tokens ? "有期限" : "無期限" %>（SHOPIFY_EXPIRING_OFFLINE_TOKENS）</td></tr>
+  </table>
+  <% if @shop %>
+    <div id="migrate-box" data-expiring="<%= @shop.expires_at.present? %>">
+      <p class="error" id="migrate-note"></p>
+      <label><input type="checkbox" id="migrate-ack"> <span id="migrate-ack-label"></span></label>
+      <button type="button" id="migrate" class="primary" disabled></button>
+      <pre id="migrate-result" class="code" hidden></pre>
+    </div>
+  <% end %>
+</section>
+
+<section class="card">
   <h2>Admin GraphQL API を叩く</h2>
   <div class="buttons">
     <button type="button" data-sample="shop">shop</button>
@@ -116,4 +134,46 @@
       </tr>`).join("");
   }
   document.getElementById("reload-logs").addEventListener("click", reloadLogs);
+  const migrateBox = document.getElementById("migrate-box");
+  if (migrateBox) {
+    const migrateButton = document.getElementById("migrate");
+    const ack = document.getElementById("migrate-ack");
+    const migrateResult = document.getElementById("migrate-result");
+
+    // 無期限なら通常の移行、有期限なら検証用に force=1 で移行リクエストをそのまま送る
+    const render = () => {
+      const expiring = migrateBox.dataset.expiring === "true";
+      document.getElementById("migrate-note").textContent = expiring
+        ? "検証用: 有期限トークンのまま移行リクエストを Shopify に送ります（成功した場合は返ってきたトークンで保存し直します）。"
+        : "有期限トークンへの移行は元に戻せません（今の無期限トークンは失効します）。";
+      document.getElementById("migrate-ack-label").textContent = expiring ? "検証用に送信する" : "元に戻せないことを理解した";
+      migrateButton.textContent = expiring ? "有期限トークンで移行リクエストを送る" : "有期限トークンに移行";
+      ack.checked = false;
+      migrateButton.disabled = true;
+    };
+    render();
+
+    ack.addEventListener("change", () => { migrateButton.disabled = !ack.checked; });
+    migrateButton.addEventListener("click", async () => {
+      migrateButton.disabled = true;
+      migrateResult.hidden = false;
+      migrateResult.textContent = "送信中...";
+      const force = migrateBox.dataset.expiring === "true";
+      const response = await fetch("/api/token/migrate_to_expiring", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force }),
+      });
+      const data = await response.json();
+      migrateResult.textContent = JSON.stringify(data, null, 2);
+      if (response.ok) {
+        document.getElementById("token-kind").textContent = "有期限";
+        document.getElementById("token-expires").textContent = new Date(data.expires_at).toLocaleString();
+        document.getElementById("token-refresh-expires").textContent = data.refresh_token_expires_at ? new Date(data.refresh_token_expires_at).toLocaleString() : "-";
+        migrateBox.dataset.expiring = "true";
+      }
+      render();
+      reloadLogs();
+    });
+  }
 </script>
