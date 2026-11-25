@@ -45,10 +45,8 @@ group :development, :test do
   gem "rubocop-rails-omakase", require: false
 end
 
-group :development do
-  # Use console on exceptions pages [https://github.com/rails/web-console]
-  gem "web-console"
-end
+# web-console は入れない: ssh -R で公開していると、中継サーバー上からのリクエストも
+# 127.0.0.1 からに見えるため、エラー画面のコンソールで手元 PC のコードを実行できてしまう
 
 group :test do
   # Use system testing [https://guides.rubyonrails.org/testing.html#system-testing]
