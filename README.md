@@ -121,6 +121,36 @@ Webhook の購読は 2 系統あり、更新方法が違います。
 
 `/logs` の `webhookSubscriptionCreate` / `Update` の `callbackUrl` で、登録された URL を確認できます。
 
+## アプリの設定と拡張機能の管理
+
+Shopify 側のアプリ設定と拡張機能は、すべてこのリポジトリのファイルで管理し、Shopify CLI でデプロイします。
+
+| ファイル | 内容 |
+| --- | --- |
+| `shopify.app.kimura-test-app.toml` | アプリの設定（URL、スコープ、認証、Webhook など） |
+| `extensions/<名前>/shopify.extension.toml` | 拡張機能ごとの設定。今は `product-admin-link`（商品詳細ページの Admin link）のみ |
+
+- 拡張機能はアプリの設定ファイルには書けない。アプリの設定ファイルで指定できるのは、拡張機能を探すディレクトリ（`extension_directories`、省略時は `extensions/`）だけ
+- ファイルは分かれているが、`shopify app deploy` が両方をまとめて **1 つのバージョン** としてリリースする。反映は同時で、Dev Dashboard で古いバージョンをリリースし直せば両方まとめて戻る
+
+```sh
+shopify app config pull --config kimura-test-app   # Dev Dashboard の画面で設定を変えた場合は、先に取り込む
+shopify app deploy --config kimura-test-app --allow-updates
+```
+
+- **デプロイ内容はリポジトリの状態がすべて**。拡張機能のディレクトリを消してデプロイすると、Shopify 側からも削除される（確認が出る。確認なしで削除するには `--allow-deletes` が必要）
+- デプロイしたら、toml と `extensions/` をコミットしておく
+
+### 拡張機能を追加する
+
+`shopify app generate extension` は Node.js プロジェクト（`package.json`）を前提にしているため、このリポジトリでは途中で失敗します。
+Admin link のように設定ファイルだけの拡張機能は、`extensions/<名前>/shopify.extension.toml` を手で作ってデプロイすれば使えます（CLI で生成した場合に入る `uid` は無くてもデプロイできた）。
+
+### 商品詳細ページの Admin link
+
+商品詳細ページの「その他の操作」に「Shopify Test で開く」が表示されます（`target = "admin.product-details.action.link"`）。
+押すと `/admin_links/product` が管理画面の iframe 内で開き、Shopify から受け取ったクエリパラメータ（`id`、`shop`、`host`、`id_token` など）と、その商品を Admin GraphQL API で取得した結果を表示します。
+
 ## アプリ専用トークンの発行（client_assertion）
 
 秘密鍵で署名した JWT（`client_assertion` / private_key_jwt）を使い、client credentials grant でアプリ専用トークンを発行します。
@@ -203,6 +233,12 @@ session.access_token
 
 移行の通信は `/logs` の `→ out auth POST .../admin/oauth/access_token` で確認できます（`refresh_token` はマスクして保存）。
 `Shop#with_shopify_session` を通して API を呼ぶと、期限切れのアクセストークンはリフレッシュトークンで自動更新されます。
+
+開発ストアで確認できたこと:
+
+- 有期限トークンの有効期間は 1 時間（`expires_in: 3599`）、リフレッシュトークンは 90 日
+- 有期限トークンを移行に使うと `400 invalid_subject_token`（トップページの移行欄は、有期限のときは検証用にそのまま送信できる）
+- 有期限に移行した後でも、アンインストールして再インストールし、`expiring: 0` を要求すれば無期限トークンが発行される
 
 ## メモ
 
